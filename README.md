@@ -1,81 +1,39 @@
-# PyChromeless
+# Selenium with Headless Chrome on AWS Lambda
 
-Python (selenium) Lambda Chromium Automation
+## Deployment Steps
+1. Go to AWS Lambda, choose your preferred region and create a new function.
 
-PyChromeless allows to automate actions to any webpage from AWS Lambda. The aim of this project is to provide
- the scaffolding for future robot implementations.
+2. Choose `Author from scratch`. Give it a function name, and choose Python 3.6 as the runtime. Under `Role`, choose `Create new role from template`. Roles define the permissions your function has to access other AWS services, like S3. For now give this role a name like `scraper`. Under `Policy templates` choose `Basic Edge Lambda permissions`, which gives your function the ability to run and create logs. Hit `Create function`.
 
-## But... how?
+3. Now you’re in the main Lambda dashboard. Here is where you set up the triggers, environment variables, and access the logs. Since we want this to run on a schedule, we need to set up the trigger. On the `add trigger` menu on the left, choose `CloudWatch Events`.
 
-All the process is explained [here](https://medium.com/21buttons-tech/crawling-thousands-of-products-using-aws-lambda-80332e259de1). Technologies used are:
-* Python 3.6
-* Selenium
-* [Chrome driver](https://sites.google.com/a/chromium.org/chromedriver/)
-* [Small chromium binary](https://github.com/adieuadieu/serverless-chrome/releases)
+    Click on `Configuration required` to set up the time the script will run. A form will appear below it.
 
-## Requirements
+    Under `Rule` choose `Create a new rule`. Give it a rule name. It can be anything, like `dailyscrape`. Give it a description so you know what it’s doing if you forget.
 
-Install docker and dependencies:
+    Now you have to write the weird cron expression that tells it when to run. I want to scraper to run at 11 PM EST every night. In Lambda, you need to enter the time in GST, so that’s 3 AM. My expression therefore needs to be: `cron(0 3 * * ? *)`
 
-* `make fetch-dependencies`
-* [Installing Docker](https://docs.docker.com/engine/installation/#get-started)
-* [Installing Docker compose](https://docs.docker.com/compose/install/#install-compose)
+    Click on `Add` and that’s it. Your function is set to run at a scheduled time.
 
-## Working locally
+4. We need to set up our environment variables. Since we’ll be uploading a Chrome browser, we need to tell Lambda where to find it. So punch in these keys and values.
 
-To make local development easy, you can use the included docker-compose. 
-Have a look at the example in `lambda_function.py`: it looks up “21 buttons” on Google and prints the first result. 
+    `PATH = /var/task/bin`<br>
+    `PYTHONPATH = /var/task/src:/var/task/lib`
 
-Run it with: `make docker-run`
+5. Under `Basic settings` choose how much memory will be allocated to your scraper. My scraper rarely needs more than 1000 MB, but I give it a little more to be safe. If the memory used goes above this limit, Lambda will terminate the function.
 
-#### Downloading files
+    Same with execution time. Lambda gives you a maximum of fifteen minutes to run a function.
 
-If your goal is to use selenium to download files instead of just scraping content from web pages, then
-you will need to specify a `download_dir` when initializing the WebDriverWrapper. Your download location 
-should be a writable Lambda directory such as `/tmp`. For example, the first code in 
-`lambda_handler` would become 
+6. Finally, you need to give your file and function a name that Lambda will know how to run. By default, Lambda will look for a file called `lambda_function.py` and run a function called `lambda_handler`. You can call it whatever you want, just make sure you change this in the `Lambda dashboard` (under `Handler`) and in your Makefile, under the `docker-run` command.
 
-```python
-driver = WebDriverWrapper(download_location='/tmp')
-```
+    So if your file is called `crime_scraper.py` and your main function is called `main()`, you need to change these values to `crime_scraper.main`
 
-This will cause file downloads to automatically download into the `download_location` without 
-requiring a confirmation dialog. You might need to sleep the handler until the file is downloaded
-since this occurs asynchronously.
+7. Create the zip package by running below command
 
-In order to download a file from a link that opens in a new tab (i.e. `target='_blank'`) you will need to 
-call `enable_download_in_headless_chrome` in your scraping script after navigating to the desired page, but before
-clicking to download. This will replace all `target='_blank'` with `target='_self'`. For example:
+    `make build-lambda-package`
 
-```python
-# Navigate to download page
-driver._driver.find_element_by_xpath('//a[@href="/downloads/"]').click()
-# Enable headless chrome file download
-driver.enable_download_in_headless_chrome()
-# Click the download link
-driver._driver.find_element_by_class_name("btn").click()
-```
+    The resulting file will be too big to upload directly to Lambda, since it has a limit of `50MB`. A Selenium scraper is big, because you need to include a Chrome browser with it. So you’ll need to add it to an S3 bucket and tell Lambda where it is. So choose `Upload file form Amazon S3` in Function area and upload the zip file from S3 to lambda.
 
-## Building and uploading the distributable package
-
-Everything is summarized into a simple Makefile so use:
-
-* `make build-lambda-package`
-* Upload the `build.zip` resulting file to your AWS Lambda function
-* Set Lambda environment variables (same values as in docker-compose.yml)
-    * `PYTHONPATH=/var/task/src:/var/task/lib`
-    * `PATH=/var/task/bin`
-* Adjust lambda function parameters to match your necessities, for the given example:
-    * Timeout: +10 seconds
-    * Memory: + 250MB 
-
-## Shouts to
-* [Docker lambda](https://github.com/lambci/docker-lambda)
-* [Lambdium](https://github.com/smithclay/lambdium)
-* [Serverless Chrome repo](https://github.com/adieuadieu/serverless-chrome) & [medium post](https://medium.com/@marco.luethy/running-headless-chrome-on-aws-lambda-fa82ad33a9eb)
-* [Chromeless](https://github.com/graphcool/chromeless)
-
-## Contributors
-* Jairo Vadillo ([@jairovadillo](https://github.com/jairovadillo))
-* Pere Giro ()
-* Ricard Falcó ([@ricardfp](https://github.com/ricardfp))
+<br><br>
+## Reference
+https://robertorocha.info/setting-up-a-selenium-web-scraper-on-aws-lambda-with-python/
